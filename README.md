@@ -42,4 +42,10 @@ without closing the docker-compose window
 7) localhost:5000 is a mirror for the api server
 
 
+
+Art project for artists to collaborate within a synthetic universe.
+
+## Internals
+Based on docker micro-service interactions.
+
 (create .env with secrets)
