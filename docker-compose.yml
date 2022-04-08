@@ -1,0 +1,285 @@
+version: '2.2'
+services:
+  redis:
+    image: redis
+    container_name: redis-server
+    ports:
+      - '127.0.0.1:6380:6379'
+    restart: on-failure
+    networks:
+      - back
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  mariadb:
+    image: mariadb/server
+    container_name: mariadb-server
+    ports:
+      - '127.0.0.1:3301:3306'
+    restart: on-failure
+#    logging:
+#      driver: syslog
+#      options:
+#        tag: "{{.DaemonName}}(image={{.ImageName}};name={{.Name}};id={{.ID}})"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: 'dothive'
+      MYSQL_USER: 'hive'
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+     - ${PWD}/docker-volumes/mariadb:/var/lib/mysql
+    networks:
+      - back
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api-server:
+    image: api-server
+    container_name: api-server
+    ports:
+      - '127.0.0.1:5000:5000'
+    restart: on-failure
+    links:
+      - 'mariadb:database'
+      - 'redis:cache'
+    environment:
+      FLASK_APP: 'run.py'
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+    build:
+      context: ./docker-volumes/api-server
+      dockerfile: Dockerfile
+      network: host
+    volumes:
+     - ${PWD}/docker-volumes/api-server/src:/code
+    networks:
+      - back
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  app-server:
+    image: app-server
+    volumes:
+     - ${PWD}/docker-volumes/app-server/src:/code
+    container_name: app-server
+    ports:
+      - '127.0.0.1:3001:3000'
+    restart: on-failure
+    links:
+      - 'mariadb:database'
+      - 'redis:cache'
+      - 'api-server:api'
+
+    build:
+      context: ./docker-volumes/app-server
+      dockerfile: Dockerfile
+      network: host
+    environment:
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    networks:
+      - back
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  hive-server:
+    image: hive-server
+    volumes:
+     - ${PWD}/docker-volumes/hive-server/src:/code
+
+    container_name: hive-server
+    restart: on-failure
+    links:
+      - 'mariadb:database'
+      - 'redis:cache'
+      - 'api-server:api'
+    build:
+      context: ./docker-volumes/hive-server
+      dockerfile: Dockerfile
+      network: host
+    networks:
+      - back
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  phpmyadmin-dev:
+    image: phpmyadmin/phpmyadmin
+
+    container_name: phpmyadmin-dev
+    restart: always
+    links:
+      - 'mariadb:db'
+      - 'redis:cache'
+      - 'api-server:api'
+      - 'nginx:nginx'
+    ports:
+     - 127.0.0.1:3002:80
+    volumes:
+     - /sessions
+#    build:
+#      context: ./docker-volumes/hive-server
+#      dockerfile: Dockerfile
+#      network: host
+    networks:
+      - back
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+
+    container_name: phpmyadmin
+    restart: always
+    links:
+      - 'mariadb:db'
+      - 'redis:cache'
+      - 'api-server:api'
+      - 'nginx:nginx'
+#    environment:
+#      PMA_ABSOLUTE_URI: 'https://dot-in.space/qHb'
+    ports:
+     - 127.0.0.1:3012:80
+    volumes:
+     - /sessions
+#    build:
+#      context: ./docker-volumes/hive-server
+#      dockerfile: Dockerfile
+#      network: host
+    networks:
+      - back
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  browserless:
+    image: browserless/chrome
+    environment:
+      MAX_CONCURRENT_SESSIONS: '10'
+
+    container_name: browserless
+    restart: always
+    links:
+      - 'mariadb:db'
+      - 'redis:cache'
+      - 'api-server:api'
+      - 'snapshot-server:nodejs'
+    ports:
+     - 127.0.0.1:3003:3000
+#    volumes:
+#     - /sessions
+#    build:
+#      context: ./docker-volumes/hive-server
+#      dockerfile: Dockerfile
+#      network: host
+    networks:
+      - back
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+
+  snapshot-server:
+    image: nodejs
+    container_name: snapshot-server
+    restart: always
+    links:
+      - 'mariadb:db'
+      - 'redis:cache'
+      - 'api-server:api'
+      - 'browserless:browserless'
+    ports:
+     - 127.0.0.1:3004:8080
+    volumes:
+     - ${PWD}/docker-volumes/snapshot-server/src:/code
+    restart: always
+    links:
+      - 'mariadb:database'
+      - 'redis:cache'
+      - 'api-server:api'
+    build:
+      context: ./docker-volumes/snapshot-server
+      dockerfile: Dockerfile
+      network: host
+    networks:
+      - back
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+#      driver: syslog
+#      options:
+#        tag: "{{.DaemonName}}(image={{.ImageName}};name={{.Name}};id={{.ID}})"
+
+  nginx:
+    restart: always
+    image: nginx-custom
+    container_name: nginx
+    ports:
+      - 80:80
+      - 4443:443
+      - 444:444
+    volumes:
+      - ${PWD}/docker-volumes/nginx/etc/nginx/conf.d:/etc/nginx/conf.d
+      - ${PWD}/docker-volumes/nginx/etc/nginx/vhost.d:/etc/nginx/vhost.d
+      - ${PWD}/docker-volumes/nginx/www:/usr/share/nginx/html
+      - ${PWD}/docker-volumes/nginx/www-dis:/code
+      - ${PWD}/docker-volumes/nginx/certbot/conf:/etc/letsencrypt:ro
+      - ${PWD}/docker-volumes/nginx/certbot/www:/var/www/certbot/:ro
+      - ${PWD}/docker-volumes/nginx/.htpasswd:/.htpasswd
+    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+    build:
+      context: ./docker-volumes/nginx
+      dockerfile: Dockerfile
+      network: host
+    networks:
+      - back
+    links:
+        - php
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+
+  php:
+    image: php:7-fpm
+    volumes:
+      - ${PWD}/docker-volumes/nginx/www-dis:/code
+    networks:
+      - back
+    restart: always
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - ${PWD}/docker-volumes/nginx/certbot/conf:/etc/letsencrypt
+      - ${PWD}/docker-volumes/nginx/certbot/www/:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    networks:
+      - back
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  back:
+    driver: bridge

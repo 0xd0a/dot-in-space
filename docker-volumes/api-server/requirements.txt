@@ -1,0 +1,15 @@
+flask
+flask_mysqldb
+datetime
+flask_cors
+flask_bcrypt
+flask_jwt_extended
+flask_sqlalchemy
+redis
+flask_migrate
+flask-debugtoolbar
+Pillow
+pybase64
+pytest-shutil
+requests
+flask-login

@@ -1,0 +1,7 @@
+node_modules/*
+/docker-volumes/mariadb/*
+.htpasswd
+/test/*
+.env
+*.old
+__pycache__/*
